@@ -52,7 +52,7 @@ Param(
     [Parameter(Mandatory = $false)]
     [string]$csv=".\GpoWithLocalAdmins.csv"
 )
-$scriptVersion = "0.1.20230914.1318"
+$scriptVersion = "0.1.20230914.1326"
 
 Write-Host "Enumeratiing local Administrators applied by Group polices (Script Version $scriptVersion)"
 
@@ -69,7 +69,7 @@ if (Get-Module GroupPolicy){
             Foreach ($xmlExtension in $xmlReport.GPO.Computer.ExtensionData){
                 if ($xmlExtension.Name -eq "Local Users and Groups"){
                     foreach ($xmlGroup in $xmlExtension.FirstChild.LocalUsersAndGroups.Group){
-                        if ($xmlGroup.name -eq "Administrtors (built-in)"){
+                        if ($xmlGroup.name -eq "Administrators (built-in)"){
                             if ($xmlGroup.Properties.action -eq "U"){
                                 Foreach ($member in $xmlGroup.Properties.Members.Member){
                                     $GroupPolicy = New-Object PSObject

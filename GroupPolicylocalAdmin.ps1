@@ -37,37 +37,32 @@ possibility of such damages
 .NOTES
     
     Version Tracking
-    0.1.20230901
+    0.1.20230919
         - First internal release
-    0.1.20230905
-        - show the current nummer ob the computer
-    0.1.20230907
-        - show the CSV file path 
-        - addtional output
-    0.1.20230911
-        - Now is looks for remote users which indirect get the "allow-to-authenticate" due group nesting
 #>
 Param(
     # output csv filename 
     [Parameter(Mandatory = $false)]
     [string]$csv=".\GpoWithLocalAdmins.csv"
 )
-$scriptVersion = "0.1.20230914.1326"
+$scriptVersion = "0.1.20230919"
 
 Write-Host "Enumeratiing local Administrators applied by Group polices (Script Version $scriptVersion)"
+New-Item -Path $csv -ItemType File -Force
 
 Import-Module GroupPolicy
 #import the GroupPolicy module and check it is available
 if (Get-Module GroupPolicy){
-    $Report = @()
     Foreach ($Gpo in Get-GPO -all){ 
-        #searching for any group policy where the computer settings are enabled
+    $Report = @()
+    #searching for any group policy where the computer settings are enabled
     if (($Gpo.GpoStatus -eq "AllSettingsEnabled") -or ($Gpo.GpoStatus -eq "UserSettingsDisabled")){
-            Write-Progress -Activity "Analyzing group policy" -CurrentOperation "$($Gpo.DisplayName)"
-            #creating the report to analysis the preferences 
-            [System.Xml.XmlDocument]$xmlReport = Get-GPOReport -Guid $Gpo.Id -ReportType Xml
-            Foreach ($xmlExtension in $xmlReport.GPO.Computer.ExtensionData){
-                if ($xmlExtension.Name -eq "Local Users and Groups"){
+        Write-Progress -Activity "Analyzing group policy" -CurrentOperation "$($Gpo.DisplayName)"
+        #creating the report to analysis the preferences 
+        [System.Xml.XmlDocument]$xmlReport = Get-GPOReport -Guid $Gpo.Id -ReportType Xml
+        Foreach ($xmlExtension in $xmlReport.GPO.Computer.ExtensionData){
+            switch ($xmlExtension.Name){
+                "Local Users and Groups" {
                     foreach ($xmlGroup in $xmlExtension.FirstChild.LocalUsersAndGroups.Group){
                         if ($xmlGroup.name -eq "Administrators (built-in)"){
                             if ($xmlGroup.Properties.action -eq "U"){
@@ -75,9 +70,28 @@ if (Get-Module GroupPolicy){
                                     $GroupPolicy = New-Object PSObject
                                     $GroupPolicy | Add-Member -MemberType NoteProperty -Name "GroupPolicyName" -Value $Gpo.DisplayName
                                     $GroupPolicy | Add-Member -MemberType NoteProperty -Name "LocalAdministrators" -Value $member.Name
-                                    $GroupPolicy | Add-Member -MemberType NoteProperty -Name "SID" -Value $xmlReport.GPO.LinksTo.InnerXml
-#                                    $GroupPolicy | Add-Member -MemberType NoteProperty -Name "LinkedTo" -Value $Gpo.
-                                    $Report += $GroupPolicy
+                                    $GroupPolicy | Add-Member -MemberType NoteProperty -Name "Method" -Value "Group Policy preferences"
+                                    $GroupPolicy | Add-Member -MemberType NoteProperty -Name "SID" -Value $member.SID
+                                    $GroupPolicy | Add-Member -MemberType NoteProperty -Name "LinkTo" -Value $xmlReport.GPO.LinksTo.InnerXml
+                                    #$Report += $GroupPolicy
+                                    export-csv -InputObject $GroupPolicy -Append -NoTypeInformation -Path $csv 
+                                }
+                            }
+                        }
+                    }    
+                }
+                    "Security"{
+                        Foreach ($RestrictedGroup in $xmlExtension.FirstChild.RestrictedGroups){
+                            if($RestrictedGroup.GroupName.SID.InnerText -like "*-544"){
+                                Foreach ($xmlMember in $RestrictedGroup.Member){
+                                    $GroupPolicy = New-Object PSObject
+                                    $GroupPolicy | Add-Member -MemberType NoteProperty -Name "GroupPolicyName" -Value $Gpo.DisplayName
+                                    $GroupPolicy | Add-Member -MemberType NoteProperty -Name "LocalAdministrators" -Value $xmlMember.Name.InnerText
+                                    $GroupPolicy | Add-Member -MemberType NoteProperty -Name "Method" -Value "Restricted Groups"
+                                    $GroupPolicy | Add-Member -MemberType NoteProperty -Name "SID" -Value $xmlMember.SID.InnerText
+                                    $GroupPolicy | Add-Member -MemberType NoteProperty -Name "LinkTo" -Value $xmlReport.GPO.LinksTo.InnerXml
+                                    #$Report += $GroupPolicy
+                                    export-csv -InputObject $GroupPolicy -Append -NoTypeInformation -Path $csv 
                                 }
                             }
                         }
@@ -87,8 +101,8 @@ if (Get-Module GroupPolicy){
         }
     }
     Write-Progress -Activity "Analyzing group policy" -Completed
-    Write-Host "creating report file $csv" -ForegroundColor Green
-    $Report | Export-Csv $csv
+    #Write-Host "creating report file $csv" -ForegroundColor Green
+    #$Report | Export-Csv $csv
 } else {
     #if the Group Policy module is not available report a error
     Write-Host "This script requires the GroupPolicy Module" -ForegroundColor Red

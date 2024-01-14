@@ -2,7 +2,7 @@
 Script Info
 
 Author: Andreas Lucas [MSFT]
-Download: 
+Download: https://github.com/Kili69/LocalAdminsByGPOReport
 
 Disclaimer:
 This sample script is not supported under any Microsoft standard support program or service. 
@@ -28,7 +28,10 @@ possibility of such damages
     create a CSV report (GpoWithLocalAdmins.csv) in the current directory
      .\grouppolicylocaladmin.ps1 -csv <filename>
     create a CSV report <filename>
-     
+.PARAMETER csv
+    Is the name of the output file
+.PARAMETER Domain
+    Is the FQDN of the AD domain who should be analyzed. If this parameter is not available the current user domain will be used     
 
 .INPUTS
     -csv is the report file
@@ -39,13 +42,22 @@ possibility of such damages
     Version Tracking
     0.1.20230919
         - First internal release
+    0.1.20240114
+        - new parameter -Domain to analyze child domains
 #>
 Param(
     # output csv filename 
     [Parameter(Mandatory = $false)]
-    [string]$csv=".\GpoWithLocalAdmins.csv"
+    [string]$csv=".\GpoWithLocalAdmins.csv",
+    [Parameter(Mandatory = $false)]
+    [string]$Domain
 )
-$scriptVersion = "0.1.20230919"
+$scriptVersion = "0.1.20240114"
+if ($Domain -ne ""){
+    $csv = ".\$Domain-GpoWithLocalAdmins.csv"
+} else {
+    $Domain = (Get-ADDomain).DNSRoot
+}
 
 Write-Host "Enumeratiing local Administrators applied by Group polices (Script Version $scriptVersion)"
 New-Item -Path $csv -ItemType File -Force
@@ -53,13 +65,12 @@ New-Item -Path $csv -ItemType File -Force
 Import-Module GroupPolicy
 #import the GroupPolicy module and check it is available
 if (Get-Module GroupPolicy){
-    Foreach ($Gpo in Get-GPO -all){ 
-    $Report = @()
+    Foreach ($Gpo in Get-GPO -all -Domain $Domain){ 
     #searching for any group policy where the computer settings are enabled
     if (($Gpo.GpoStatus -eq "AllSettingsEnabled") -or ($Gpo.GpoStatus -eq "UserSettingsDisabled")){
         Write-Progress -Activity "Analyzing group policy" -CurrentOperation "$($Gpo.DisplayName)"
         #creating the report to analysis the preferences 
-        [System.Xml.XmlDocument]$xmlReport = Get-GPOReport -Guid $Gpo.Id -ReportType Xml
+        [System.Xml.XmlDocument]$xmlReport = Get-GPOReport -Guid $Gpo.Id -ReportType Xml -Domain $Domain
         Foreach ($xmlExtension in $xmlReport.GPO.Computer.ExtensionData){
             switch ($xmlExtension.Name){
                 "Local Users and Groups" {
